@@ -8,7 +8,7 @@
  ## Cara Pakai
 ```bash
 Simpan list nomor yang mau dicek di file list-nomor.json
- contoh:
+contoh:
 ["628126473xxx","6291728xxx","62xxxxxx"]
 
 - Nomor yang aktif disimpan di file nomor-aktif.json
