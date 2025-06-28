@@ -1,162 +1,178 @@
-const sessionName = "yusril";
-const donet = "https://saweria.co/sansekai";
-const owner = ["6287878817169"]; // Put your number here ex: ["62xxxxxxxxx"]
-const {
-  default: sansekaiConnect,
-  useMultiFileAuthState,
-  DisconnectReason,
+import {
+  makeWASocket,
   fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  Browsers, 
-  fetchLatestWaWebVersion
-} = require("@adiwajshing/baileys");
-const pino = require("pino");
-const { Boom } = require("@hapi/boom");
-const fs = require("fs");
-const chalk = require("chalk");
-const figlet = require("figlet");
-const _ = require("lodash");
-
-const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
+  DisconnectReason,
+  useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
+  isJidBroadcast,
+  jidDecode,
+  Browsers
+} from "baileys";
+import Pino from "pino";
+import fs from "fs";
+import chalk from "chalk";
+import qrcode from "qrcode-terminal"
+import NodeCache from '@cacheable/node-cache'
 
 const color = (text, color) => {
   return !color ? chalk.green(text) : chalk.keyword(color)(text);
 };
 
-async function startHisoka() {
-  const { state, saveCreds } = await useMultiFileAuthState(`./${sessionName ? sessionName : "session"}`);
-  const { version, isLatest } = await fetchLatestWaWebVersion().catch(() => fetchLatestBaileysVersion());
-  console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
-  console.log(
-    color(
-      figlet.textSync("Checker No WA - Sansekai", {
-        font: "Small",
-        horizontalLayout: "default",
-        vertivalLayout: "default",
-        whitespaceBreak: false,
-      }),
-      "green"
-    )
-  );
-
-  const client = sansekaiConnect({
-    logger: pino({ level: "silent" }),
-    printQRInTerminal: true,
-    browser: Browsers.macOS('Desktop'),
-    auth: state,
-  });
-
-  store.bind(client.ev);
-
-  client.ev.on("messages.upsert", async (message) => {
-    //console.log(JSON.stringify(chatUpdate, undefined, 2))
-    try {
-        const list_nomor = JSON.parse(fs.readFileSync("./list-nomor.json")) // tempat nomor yang mau di cek (list nomor)
-        const nomor_aktif = JSON.parse(fs.readFileSync("./nomor-aktif.json")) // tempat menyimpan hasil nomor yang aktif (list nomor)
-        const nomor_tidak_aktif = JSON.parse(fs.readFileSync("./nomor-tidak-aktif.json")) // tempat menyimpan hasil nomor yang tidak aktif (list nomor)
-      //let cek = await client.onWhatsApp("628128468899@s.whatsapp.net");
-      console.log(`Total nomor yang ada di list-nomor.json ${list_nomor.length}`)
-      for (let i of list_nomor) {
-        let cek = await client.onWhatsApp(`${i}@s.whatsapp.net`);
-        if (cek.length == 0) {
-          console.log(color(`Nomor wa.me/${i.replace("@s.whatsapp.net", "")} tidak aktif`, "red"));
-          // nomor_tidak_aktif.push(i.replace("@s.whatsapp.net", "@c.us"));
-          nomor_tidak_aktif.push(i);
-        fs.writeFile('./nomor-tidak-aktif.json', JSON.stringify(nomor_tidak_aktif), (err) => {
-          if (err) {
-              console.log('Terjadi kesalahan saat menyimpan data ke file JSON:', err);
-          } else {
-              // console.log('Data berhasil disimpan ke file JSON.');
-              console.log(color(`Nomor ${i} berhasil disimpan ke file nomor-tidak-aktif.json`, "red"));
-          }
-      });
-        } else {
-          // console.log(`Nomor ${i} aktif`)
-          console.log(color(`Nomor ${i} aktif`, "green"));
-        // nomor_aktif.push(i.replace("@s.whatsapp.net", "@c.us"));
-        nomor_aktif.push(i);
-        fs.writeFile('./nomor-aktif.json', JSON.stringify(nomor_aktif), (err) => {
-          if (err) {
-              console.error('Terjadi kesalahan saat menyimpan data ke file JSON:', err);
-          } else {
-              // console.log('Data berhasil disimpan ke file JSON.');
-              console.log(color(`Nomor ${i} berhasil disimpan ke file nomor-aktif.json`, "green"));
-          }
-      });
-        }
-      }
-      console.log(color(`Jumlah nomor aktif: ${nomor_aktif.length}`, "green"));
-      console.log(color(`Jumlah nomor tidak aktif: ${nomor_tidak_aktif.length}`, "red"));
-    } catch (err) {
-      console.log(err);
-    }
-  });
-
-  // Handle error
-  const unhandledRejections = new Map();
-  process.on("unhandledRejection", (reason, promise) => {
-    unhandledRejections.set(promise, reason);
-    console.log("Unhandled Rejection at:", promise, "reason:", reason);
-  });
-  process.on("rejectionHandled", (promise) => {
-    unhandledRejections.delete(promise);
-  });
-  process.on("Something went wrong", function (err) {
-    console.log("Caught exception: ", err);
-  });
-
-  // Setting
-
-  client.public = true;
-
-  client.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === "close") {
-      let reason = new Boom(lastDisconnect?.error)?.output.statusCode;
-      if (reason === DisconnectReason.badSession) {
-        console.log(`Bad Session File, Please Delete Session and Scan Again`);
-        process.exit();
-      } else if (reason === DisconnectReason.connectionClosed) {
-        console.log("Connection closed, reconnecting....");
-        startHisoka();
-      } else if (reason === DisconnectReason.connectionLost) {
-        console.log("Connection Lost from Server, reconnecting...");
-        startHisoka();
-      } else if (reason === DisconnectReason.connectionReplaced) {
-        console.log("Connection Replaced, Another New Session Opened, Please Restart Bot");
-        process.exit();
-      } else if (reason === DisconnectReason.loggedOut) {
-        console.log(`Device Logged Out, Please Delete Folder Session yusril and Scan Again.`);
-        process.exit();
-      } else if (reason === DisconnectReason.restartRequired) {
-        console.log("Restart Required, Restarting...");
-        startHisoka();
-      } else if (reason === DisconnectReason.timedOut) {
-        console.log("Connection TimedOut, Reconnecting...");
-        startHisoka();
-      } else {
-        console.log(`Unknown DisconnectReason: ${reason}|${connection}`);
-        startHisoka();
-      }
-    } else if (connection === "open") {
-      console.log(color("Bot success conneted to server", "green"));
-      console.log(color("Donate for creator https://saweria.co/sansekai", "yellow"));
-      client.sendMessage(owner + "@s.whatsapp.net", { text: `Bot started!\n\njangan lupa support ya bang :)\n${donet}` });
-    }
-    // console.log('Connected...', update)
-  });
-
-  client.ev.on("creds.update", saveCreds);
-
-  return client;
-}
-
-startHisoka();
-
-let file = require.resolve(__filename);
-fs.watchFile(file, () => {
-  fs.unwatchFile(file);
-  console.log(chalk.redBright(`Update ${__filename}`));
-  delete require.cache[file];
-  require(file);
+const logger = Pino({
+    level: "silent"
 });
+
+const groupCache = new NodeCache()
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function connectToWhatsApp() {
+	const { state, saveCreds } = await useMultiFileAuthState(`./session`);
+  const { version } = await fetchLatestBaileysVersion();
+	const sock = makeWASocket({
+   auth: {
+     creds: state.creds,
+     keys: makeCacheableSignalKeyStore(state.keys, logger),
+   },
+        //qrTimeout: 30_000,
+        //connectTimeoutMs: 30_000,
+        //keepAliveIntervalMs: 30_000,
+   retryRequestDelayMs: 300,
+   maxMsgRetryCount: 10,
+   version: version,
+   logger: logger,
+  //  printQRInTerminal: true,
+        //defaultQueryTimeoutMs: undefined,
+        markOnlineOnConnect: true,
+   generateHighQualityLinkPreview: true,
+   //syncFullHistory: false,
+        //emitOwnEvents: false,
+   //...(use_pairing_code ? { browser: Browsers.macOS('Desktop') } : {}),
+   browser: Browsers.macOS('Chrome'),
+   cachedGroupMetadata: async (jid) => groupCache.get(jid)
+   /*shouldIgnoreJid: (jid) => {
+     !jid || isJidBroadcast(jid) || jid.includes('newsletter')
+   }*/
+ });
+
+		sock.ev.process(async (ev) => {
+    if (ev["connection.update"]) {
+      const update = ev["connection.update"];
+      const { connection, lastDisconnect } = update;
+      const status = lastDisconnect?.error?.output?.statusCode;
+      // console.log(update.qr);
+      if (update.qr) {
+        qrcode.generate(update.qr, {small: true}, function (qrcode) {
+          console.log(qrcode)
+      });
+    }
+
+        if (connection === 'close') {
+            const reason = Object.entries(DisconnectReason).find(i => i[1] === status)?.[0] || 'unknown';
+
+            console.log(`session | Closed connection, status: ${reason} (${status})`);
+            
+            switch (reason) {
+        case "multideviceMismatch":
+        case "loggedOut":
+          console.error(lastDisconnect.error);
+          //await sock.logout();
+          fs.rmSync(`./session`, { recursive: true, force: true });
+          /*exec('npm run stop:pm2', err => {
+            if (err) return treeKill(process.pid);
+          });*/
+          break;
+        default:
+        if (status === 403) {
+          //console.error(lastDisconnect.error?.message);
+          console.error(lastDisconnect.error);
+          //await sock.logout();
+          fs.rmSync(`./session`, { recursive: true, force: true });
+          } else {
+          console.error(lastDisconnect.error?.message);
+          connectToWhatsApp();
+          }
+      }
+
+            /*if (status !== 403 || status !== 401) {
+                return connectToWhatsApp();
+            }
+            
+            console.log(`sansekai${index} logout`);
+            await sock.logout();
+      fs.rmSync(`./sansekai${index}`, { recursive: true, force: true });*/
+        } else if (connection === 'open') {
+            console.log(`session Connected: ${jidDecode(sock?.user?.id)?.user}`);
+        }
+    }
+    if (ev["creds.update"]) {
+      await saveCreds();
+    }
+    // sock.ev.on("messages.upsert", async (message) => { 
+    //   console.log(message);
+    // })
+    
+    const upsert = ev["messages.upsert"];
+if (upsert) {
+  try {
+    const list_nomor = JSON.parse(fs.readFileSync("./list-nomor.json")); // tempat nomor yang mau di cek (list nomor)
+    const nomor_aktif = JSON.parse(fs.readFileSync("./nomor-aktif.json")); // tempat menyimpan hasil nomor yang aktif (list nomor)
+    const nomor_tidak_aktif = JSON.parse(fs.readFileSync("./nomor-tidak-aktif.json")); // tempat menyimpan hasil nomor yang tidak aktif (list nomor)
+    
+    console.log(`Total nomor yang ada di list-nomor.json ${list_nomor.length}`);
+    
+    for (let i of list_nomor) {
+        let cek = await sock.onWhatsApp(`${i}@s.whatsapp.net`);
+        
+        if (cek.length == 0) {
+            console.log(color(`Nomor wa.me/${i.replace("@s.whatsapp.net", "")} tidak aktif`, "red"));
+            nomor_tidak_aktif.push(i);
+            fs.writeFile('./nomor-tidak-aktif.json', JSON.stringify(nomor_tidak_aktif), (err) => {
+                if (err) {
+                    console.log('Terjadi kesalahan saat menyimpan data ke file JSON:', err);
+                } else {
+                    console.log(color(`Nomor ${i} berhasil disimpan ke file nomor-tidak-aktif.json`, "red"));
+                }
+            });
+        } else {
+            console.log(color(`Nomor ${i} aktif`, "green"));
+            nomor_aktif.push(i);
+            fs.writeFile('./nomor-aktif.json', JSON.stringify(nomor_aktif), (err) => {
+                if (err) {
+                    console.error('Terjadi kesalahan saat menyimpan data ke file JSON:', err);
+                } else {
+                    console.log(color(`Nomor ${i} berhasil disimpan ke file nomor-aktif.json`, "green"));
+                }
+            });
+        }
+        
+        await sleep(500); // Jeda 
+    }
+    
+    console.log(color(`Jumlah nomor aktif: ${nomor_aktif.length}`, "green"));
+    console.log(color(`Jumlah nomor tidak aktif: ${nomor_tidak_aktif.length}`, "red"));
+    process.exit();
+    
+} catch (err) {
+    console.log(err);
+}
+ }
+ 
+//  if (ev["call"]) {
+//   const call = ev["call"]
+//         let { id, chatId, isGroup } = call[0];
+//         if (isGroup) return;
+//         await sock.rejectCall(id, chatId);
+//         // await sleep(3000);
+//         // await sock.updateBlockStatus(chatId, "block"); // Block user
+//         await sock.sendMessage(
+// 			chatId,
+// 			{
+// 				text: "Maaf kak, telepon/video call tidak dapat diterima.",
+// 			},
+// 			{ ephemeralExpiration: upsert?.messages[0].contextInfo?.expiration }
+// 		);
+//     }
+  });
+}
+connectToWhatsApp()
